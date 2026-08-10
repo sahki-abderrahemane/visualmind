@@ -1,0 +1,137 @@
+services:
+
+  # ----------------------------------------------------------
+  # Zookeeper
+  # ----------------------------------------------------------
+  # Kafka uses Zookeeper in this local development setup to
+  # manage broker metadata and cluster coordination.
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.7
+    container_name: visualmind-zookeeper
+    restart: unless-stopped
+
+    environment:
+      # Zookeeper listens for Kafka's internal coordination requests.
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+      # Disable unauthenticated four-letter-word commands that
+      # are not needed by this local VisualMind environment.
+      ZOOKEEPER_4LW_COMMANDS: ruok
+
+    ports:
+      # Exposes Zookeeper locally for development/debugging.
+      - "2181:2181"
+
+    volumes:
+      # Persists Zookeeper state between container restarts.
+      - zookeeper-data:/var/lib/zookeeper/data
+
+      # Persists Zookeeper transaction logs.
+      - zookeeper-log:/var/lib/zookeeper/log
+
+
+  # ----------------------------------------------------------
+  # Kafka
+  # ----------------------------------------------------------
+  # Kafka receives search events from the VisualMind API.
+  kafka:
+    image: confluentinc/cp-kafka:7.7.7
+    container_name: visualmind-kafka
+    restart: unless-stopped
+
+    depends_on:
+      # Kafka waits for Zookeeper to start before initializing.
+      - zookeeper
+
+    ports:
+      # Exposes Kafka to applications running directly on the host.
+      - "9092:9092"
+
+      # Exposes Kafka's internal listener for Docker-network clients.
+      - "29092:29092"
+
+    environment:
+      # Gives this broker a unique identifier.
+      KAFKA_BROKER_ID: 1
+
+      # Connects Kafka to the Zookeeper service in Docker.
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # Kafka exposes two listeners:
+      # localhost:9092 for the VisualMind host application and
+      # kafka:29092 for other Docker containers.
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+
+      # Advertised addresses tell clients which address to use
+      # after the initial broker connection.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+
+      # Maps each listener to the PLAINTEXT security protocol.
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+
+      # Kafka uses the internal Docker listener for broker-to-broker traffic.
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Single-broker development cluster requires replication factor 1.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      # Transaction state logs also use a single replica locally.
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+      # Minimum in-sync replicas must be one because there is only one broker.
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Allows automatic creation of development topics.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      # Kafka's group rebalance delay is minimized for local development.
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      # Keeps the Docker-based broker usable for small local workloads.
+      KAFKA_HEAP_OPTS: "-Xms512M -Xmx512M"
+
+    volumes:
+      # Persists Kafka log data between container restarts.
+      - kafka-data:/var/lib/kafka/data
+
+
+  # ----------------------------------------------------------
+  # Kafka UI
+  # ----------------------------------------------------------
+  # Kafka UI provides a browser-based interface for inspecting
+  # topics, messages, brokers, and consumer groups.
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: visualmind-kafka-ui
+    restart: unless-stopped
+
+    depends_on:
+      # Kafka UI requires the Kafka broker to be available.
+      - kafka
+
+    ports:
+      # Opens Kafka UI at http://localhost:8080.
+      - "8080:8080"
+
+    environment:
+      # Defines the Kafka cluster displayed in the UI.
+      KAFKA_CLUSTERS_0_NAME: visualmind
+
+      # Kafka UI connects to Kafka through the Docker network.
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+
+# ============================================================
+# Persistent Docker volumes
+# ============================================================
+
+volumes:
+
+  # Stores Zookeeper's persistent metadata.
+  zookeeper-data:
+
+  # Stores Zookeeper transaction logs.
+  zookeeper-log:
+
+  # Stores Kafka's persistent broker logs.
+  kafka-data:

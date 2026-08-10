@@ -1,0 +1,100 @@
+# ============================================================
+# API
+# ============================================================
+
+# FastAPI provides the REST API framework for VisualMind.
+fastapi==0.116.1
+
+# Uvicorn runs the FastAPI application.
+uvicorn[standard]==0.35.0
+
+# Handles multipart/form-data image uploads.
+python-multipart==0.0.20
+
+
+# ============================================================
+# Machine Learning / CLIP
+# ============================================================
+
+# PyTorch provides the tensor and neural-network runtime used by CLIP.
+torch==2.7.1
+
+# Hugging Face Transformers provides the CLIP implementation and pretrained model.
+transformers==4.54.0
+
+# PIL/Pillow handles product images before CLIP encoding.
+Pillow==11.3.0
+
+# NumPy is used for embedding vectors and numerical operations.
+numpy==2.2.6
+
+
+# ============================================================
+# Vector Search
+# ============================================================
+
+# CPU implementation of FAISS for similarity search over CLIP embeddings.
+faiss-cpu==1.11.0
+
+
+# ============================================================
+# Database / Configuration
+# ============================================================
+
+# SQLAlchemy keeps database access centralized and makes future DB migration easier.
+SQLAlchemy==1.4.54
+
+# Loads configuration values from the .env file.
+python-dotenv==1.1.1
+
+
+# ============================================================
+# Data Processing
+# ============================================================
+
+# Pandas is useful for dataset exploration and metadata processing.
+pandas==2.3.1
+
+# PyArrow supports efficient tabular data processing when needed by the pipeline.
+pyarrow==21.0.0
+
+
+# ============================================================
+# Kafka
+# ============================================================
+
+# Kafka client used to publish VisualMind search events.
+confluent-kafka==2.11.1
+
+
+# ============================================================
+# Dashboard / Visualization
+# ============================================================
+
+# Streamlit provides the VisualMind analytics dashboard.
+streamlit==1.48.0
+
+# Plotly provides interactive dashboard visualizations.
+plotly==6.2.0
+
+# UMAP reduces high-dimensional embeddings to two dimensions for visualization.
+umap-learn==0.5.7
+
+
+# ============================================================
+# Airflow
+# ============================================================
+
+# Apache Airflow orchestrates the scheduled index/recommendation pipeline.
+apache-airflow==3.0.4
+
+
+# ============================================================
+# Testing
+# ============================================================
+
+# Pytest runs the VisualMind automated test suite.
+pytest==8.4.1
+
+# HTTPX allows tests to call the FastAPI application.
+httpx==0.28.1
