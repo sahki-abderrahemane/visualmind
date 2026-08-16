@@ -320,3 +320,33 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         # Always close the session after the operation completes.
         db.close()
+
+def get_products_by_ids(
+    db: Session,
+    product_ids: list[str],
+) -> dict[str, Product]:
+    """
+    Retrieve products by their IDs and return them indexed by product ID.
+
+    FAISS returns product positions, which are converted to product IDs
+    before reaching this function.
+    """
+
+    # Avoid an unnecessary database query when FAISS returns no results.
+    if not product_ids:
+        return {}
+
+    # Fetch all requested products in a single SQL query instead of
+    # performing one query per search result.
+    products = (
+        db.query(Product)
+        .filter(Product.product_id.in_(product_ids))
+        .all()
+    )
+
+    # Build a dictionary for O(1) product lookup while preserving the
+    # ordering returned by FAISS in the search route.
+    return {
+        product.product_id: product
+        for product in products
+    }

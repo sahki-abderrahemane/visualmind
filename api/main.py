@@ -10,8 +10,8 @@ import faiss
 from fastapi import FastAPI
 
 from api.core.clip_encoder import CLIPEncoder
-
-
+from api.routes.search import router as search_router
+from api.routes.recommendations import router as recommendations_router
 # Resolve the project root from this file:
 # visualmind/api/main.py -> visualmind/
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -93,7 +93,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
+app.include_router(search_router)
+app.include_router(recommendations_router)
 @app.get("/health")
 async def health() -> dict:
     """
