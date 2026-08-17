@@ -1,130 +1,330 @@
-VisualMind — Full Project Schedule
-Step 0 — Environment Setup ✅
-Create full folder structure
-Create Python virtual environment
-Create requirements.txt
-Create .env
-Create Docker Compose
-Kafka
-Zookeeper
-Kafka UI
-Resolve Python 3.13 / SQLAlchemy / Airflow dependency setup
-Kafka running
-Step 1 — Dataset Setup ✅
-ABO Dataset
-Download ABO metadata
-Download all 16 listing shards
-Download images.csv.gz
-Download abo-images-small.tar
-Extract small images
-Validate image files
-Build ABO image ID → local path resolver
-Parse ABO product metadata
-Create SQLite database
-Ingest all listing shards
-Validate database records
-Current dataset
-ABO records processed:    147,702
-Newly inserted:            135,860
-Invalid records:               575
-Missing images:                 0
+# VisualMind
 
+**Multimodal visual product search and recommendation engine built for integration into modern applications.**
 
-Products in SQLite:        145,050
-Products with images:      145,050
-Distinct categories:           573
-Database size:                167 MB
-Step 2 — CLIP Encoder + FAISS Index ⏳ NEXT
-2.1 CLIP Encoder
+VisualMind is an end-to-end AI search platform that turns product images and natural-language descriptions into semantic search results and recommendations.
 
-File:
+It combines **CLIP embeddings, FAISS vector search, multimodal fusion, zero-shot tagging, recommendation generation, FastAPI, Apache Airflow, Kafka, SQLite, and Streamlit analytics** into a modular architecture that can be integrated into an existing e-commerce platform, marketplace, catalog, ERP, mobile application, or other product-based system.
 
-api/core/clip_encoder.py
-Load openai/clip-vit-base-patch32
-Load model only once
-Implement encode_image(image)
-Implement encode_text(text)
-Produce 512-dimensional embeddings
-L2-normalize embeddings
-Test image encoding
-Test text encoding
-2.2 FAISS Index Builder
+The core AI capabilities are exposed through a REST API, making VisualMind independent from the frontend or application consuming it.
 
-File:
+---
 
-pipeline/index_builder.py
-Load products from SQLite
-Iterate through product images
-Generate CLIP embeddings
-Build faiss.IndexFlatIP
-Store normalized vectors
-Save:
-data/faiss_index.bin
-Save product ↔ FAISS position mapping:
-data/embeddings_metadata.pkl
-Verify index size
-Verify similarity search
-Step 3 — FastAPI Search ⏳
-API
+## What VisualMind Does
 
-Files:
+VisualMind supports three search modes:
 
-api/main.py
-api/routes/search.py
-api/routes/products.py
-Image Search
+### Image Search
+
+Upload a product image and retrieve visually similar products.
+
+```text
+Image
+  ↓
+CLIP
+  ↓
+512D embedding
+  ↓
+FAISS
+  ↓
+Top-K products
+```
+
+### Text Search
+
+Search using natural language.
+
+```text
+"women's blue heels"
+        ↓
+      CLIP
+        ↓
+  Text embedding
+        ↓
+      FAISS
+        ↓
+   Product results
+```
+
+### Multimodal Search
+
+Combine an image with a textual refinement.
+
+```text
+              ┌──→ Image → CLIP ──┐
+User Query ───┤                    ├──→ Fusion → FAISS
+              └──→ Text  → CLIP ──┘
+```
+
+The default fusion configuration is:
+
+```text
+Image: 60%
+Text:  40%
+```
+
+The weights are configurable through environment variables.
+
+---
+
+# Designed as an Integration Layer
+
+VisualMind is not tied to a specific frontend or e-commerce application.
+
+Its core functionality is exposed through HTTP endpoints, meaning it can be integrated into almost any system capable of making REST requests.
+
+```text
+┌───────────────────────┐
+│ Existing Application  │
+│                       │
+│ Web / Mobile / ERP    │
+│ Marketplace / SaaS    │
+└───────────┬───────────┘
+            │
+            │ HTTP
+            ▼
+┌──────────────────────────┐
+│      VisualMind API      │
+│         FastAPI          │
+├──────────────────────────┤
+│ Image Search             │
+│ Text Search               │
+│ Multimodal Search         │
+│ Recommendations           │
+│ Product Tags              │
+└────────────┬─────────────┘
+             │
+             ▼
+       ┌─────────────┐
+       │ CLIP + FAISS│
+       └─────────────┘
+```
+
+This allows VisualMind to act as a **standalone AI search service** behind an existing product.
+
+For example:
+
+```text
+Existing E-Commerce
+        │
+        ├── Product Catalog
+        ├── Authentication
+        ├── Payments
+        └── Orders
+                │
+                ▼
+          VisualMind API
+                │
+                ├── Visual Search
+                ├── Semantic Search
+                ├── Multimodal Search
+                └── Recommendations
+```
+
+The consuming application does not need to know how CLIP, FAISS, or the recommendation pipeline works.
+
+---
+
+# API
+
+### Image Search
+
+```http
 POST /search/image
-Image upload
-CLIP encoding
-FAISS search
-Top-k products
-Similarity scores
-Text Search
+```
+
+Upload an image and retrieve the most visually similar products.
+
+### Text Search
+
+```http
 POST /search/text
-Text input
-CLIP encoding
-FAISS search
-Top-k products
-Similarity scores
-Startup architecture
-FastAPI startup
-      │
-      ├── Load CLIP ONCE
-      │
-      └── Load FAISS ONCE
+```
 
-Never reload either model/index per request.
+Search the product catalog using natural language.
 
-Step 4 — Multimodal Fusion ⏳
+### Multimodal Search
 
-Endpoint:
-
+```http
 POST /search/multimodal
-Pipeline
-Image ──→ CLIP ──┐
-                 ├──→ Weighted Fusion ──→ Normalize ──→ FAISS
-Text ───→ CLIP ──┘
-Default weights
-Image: 0.6
-Text:  0.4
+```
 
-Configurable through .env.
+Combine image similarity with textual intent.
 
-Image encoding
-Text encoding
-Weighted average
-L2 normalization
-FAISS search
-Return combined results
-Step 5 — Auto-Tagging ⏳
+### Product Recommendations
 
-File:
+```http
+GET /recommend/{product_id}
+```
 
-api/core/tagger.py
+Retrieve precomputed recommendations for a product.
 
-Use CLIP zero-shot classification.
+### Product Tags
 
-Categories
+```http
+GET /products/{id}/tags
+```
+
+Retrieve automatically generated CLIP-based tags.
+
+### Health
+
+```http
+GET /health
+```
+
+Used to verify API and AI infrastructure availability.
+
+---
+
+# Core Architecture
+
+```text
+                           Client Applications
+                                  │
+                   ┌──────────────┼──────────────┐
+                   │              │              │
+                 Image           Text       Image + Text
+                   │              │              │
+                   └──────────────┼──────────────┘
+                                  ▼
+                         ┌─────────────────┐
+                         │     FastAPI     │
+                         └────────┬────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │      CLIP       │
+                         │     512D        │
+                         └────────┬────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │      FAISS      │
+                         │   IndexFlatIP   │
+                         └────────┬────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │ Product Results │
+                         └────────┬────────┘
+                                  │
+             ┌────────────────────┼────────────────────┐
+             │                    │                    │
+             ▼                    ▼                    ▼
+          SQLite                Kafka            Recommendations
+             │                    │                    │
+             └───────────────────┬─────────────────────┘
+                                 ▼
+                         ┌─────────────────┐
+                         │    Streamlit    │
+                         │    Analytics    │
+                         └─────────────────┘
+                         ┌─────────────────┐
+                         │     Airflow     │
+                         └────────┬────────┘
+                                  │
+                     ┌────────────┴────────────┐
+                     ▼                         ▼
+              FAISS Rebuild             Recommendations
+```
+
+---
+
+# AI Search Engine
+
+VisualMind uses:
+
+**CLIP**
+
+```text
+openai/clip-vit-base-patch32
+```
+
+Images and text are transformed into a shared **512-dimensional embedding space**.
+Embeddings are L2-normalized before indexing.
+
+**FAISS**
+
+```text
+IndexFlatIP
+```
+
+The final catalog contains:
+
+```text
+145,050 products
+145,050 product images
+512-dimensional embeddings
+```
+
+The resulting vector index contains **145,050 vectors**.
+
+This architecture allows the search engine to work with semantic similarity rather than depending exclusively on exact keyword matching.
+
+---
+
+# Multimodal Fusion
+
+VisualMind can combine independent image and text representations:
+
+```text
+Image embedding ──┐
+                  ├──→ Weighted Average
+Text embedding ───┘
+                         ↓
+                  L2 Normalization
+                         ↓
+                       FAISS
+```
+
+This makes queries such as:
+
+> "Find something similar to this image, but in blue"
+
+possible without requiring a separate multimodal model or search infrastructure.
+
+---
+
+# Recommendation Engine
+
+Recommendations are generated from the same semantic embedding infrastructure used for search.
+
+```text
+Product
+   ↓
+CLIP embedding
+   ↓
+FAISS nearest-neighbor search
+   ↓
+Remove source product
+   ↓
+Top 20
+   ↓
+SQLite
+```
+
+Recommendations are computed offline and stored in the database.
+
+This keeps the recommendation API lightweight:
+
+```text
+GET /recommend/{product_id}
+```
+
+The API does not need to perform an expensive vector search every time a product page is opened.
+
+---
+
+# Automated Product Tagging
+
+VisualMind uses CLIP zero-shot classification to generate product metadata without training a dedicated classifier.
+
+Supported tag dimensions include:
+
+**Categories**
+
+```text
 clothing
 electronics
 furniture
@@ -134,7 +334,11 @@ home decor
 sports
 books
 toys
-Colors
+```
+
+**Colors**
+
+```text
 red
 blue
 green
@@ -146,7 +350,11 @@ grey
 pink
 orange
 purple
-Styles
+```
+
+**Styles**
+
+```text
 modern
 vintage
 casual
@@ -154,168 +362,336 @@ formal
 minimalist
 luxury
 sporty
-Database
+```
 
-Store generated tags in:
+Tags are persisted in the product database and exposed through the API.
 
-tags
-API
-GET /products/{id}/tags
-Step 6 — Recommendations + Airflow ⏳
-Recommendation Engine
+---
 
-File:
+# Data Pipeline
 
-pipeline/recommendation_builder.py
+The system was built using the **Amazon Berkeley Objects (ABO)** dataset.
 
-For every product:
+The ingestion pipeline handles:
 
-Product embedding
-       ↓
-FAISS
-       ↓
-Top 20 nearest products
-       ↓
-SQLite recommendations
-Generate recommendations
-Exclude the product itself
-Store top-20 neighbors
-Validate recommendations
-Airflow
+* Metadata shard processing
+* Image metadata
+* Image extraction
+* Image validation
+* Image ID resolution
+* Product normalization
+* SQLite ingestion
+* Dataset consistency checks
 
-File:
+Final catalog:
 
-pipeline/dags/visualmind_pipeline.py
+```text
+Records processed:       147,702
+Newly inserted:          135,860
+Invalid records:             575
+Missing images:                0
+Products:                145,050
+Products with images:    145,050
+Categories:                  573
+Database size:             ~167 MB
+```
 
-Daily at:
+---
 
-02:00
+# Workflow Automation
 
-Tasks:
+Apache Airflow handles the recurring offline pipeline.
 
+The production-oriented flow is:
+
+```text
+Daily Schedule
+      │
+      ▼
 rebuild_faiss_index
-        ↓
+      │
+      ▼
 rebuild_recommendations
-API
-GET /recommend/{product_id}
-Step 7 — Kafka + Streamlit Analytics ⏳
-Kafka
+```
 
-File:
+This separates expensive batch processing from real-time API requests.
 
-api/core/kafka_producer.py
+The system can therefore refresh its search and recommendation data without requiring the API to rebuild everything during a user request.
 
-Every search produces an event to:
+---
 
-visualmind.search.events
+# Event-Driven Architecture
 
-Event:
+Every search is persisted locally and published as an event.
 
+```text
+                         Search
+                           │
+              ┌────────────┴────────────┐
+              ▼                         ▼
+        SQLite event               Kafka event
+                                      │
+                                      ▼
+                         visualmind.search.events
+```
+
+Example:
+
+```json
 {
-  "query_type": "image",
-  "query_text": "...",
+  "query_type": "text",
+  "query_text": "women's blue heels",
   "result_count": 10,
-  "top_result_id": "...",
-  "response_time_ms": 42,
-  "timestamp": "..."
+  "top_result_id": "B078FBX4HK",
+  "response_time_ms": 277.595,
+  "timestamp": "2026-08-17T14:33:21.704162+00:00"
 }
+```
 
-Every search must do both:
+Kafka decouples search analytics from the API itself, allowing additional consumers to be added later without modifying the search engine.
 
-Search
- ├──→ SQLite search_events
- │
- └──→ Kafka visualmind.search.events
+---
 
-These Kafka events become the data source for NexusFlow.
+# Analytics
 
-Streamlit Dashboard
+The included Streamlit dashboard provides visibility into the system.
 
-File:
+### Search Metrics
 
-dashboard/app.py
+* Total searches
+* Daily activity
+* Weekly activity
+* Search modality distribution
 
-Dashboard sections:
+### Search Analytics
 
-Search Metrics
-Total searches today
-Total searches this week
-Image vs text vs multimodal
-Search Analytics
-Top 10 queries
-Zero-result queries
-Search trends
-Index Health
-FAISS index size
-Last rebuild time
-Embedding statistics
-Embedding Visualization
-CLIP embeddings
-      ↓
-UMAP
-      ↓
-2D visualization
-      ↓
-Colored by product category
-Final VisualMind Architecture
-                    ┌──────────────────┐
-                    │   User / Client  │
-                    └────────┬─────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-           Image           Text        Image + Text
-              │              │              │
-              └──────────────┼──────────────┘
-                             ↓
-                    ┌─────────────────┐
-                    │   FastAPI       │
-                    └────────┬────────┘
-                             ↓
-                    ┌─────────────────┐
-                    │      CLIP       │
-                    │  512D vectors   │
-                    └────────┬────────┘
-                             ↓
-                    ┌─────────────────┐
-                    │      FAISS      │
-                    │  IndexFlatIP    │
-                    └────────┬────────┘
-                             ↓
-                    ┌─────────────────┐
-                    │ Product Results │
-                    └─────────────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              ↓              ↓              ↓
-           SQLite          Kafka       Recommendations
-              │              │              │
-              │              ↓              │
-              │         NexusFlow           │
-              │                             │
-              └──────────────┬──────────────┘
-                             ↓
-                    ┌─────────────────┐
-                    │    Streamlit    │
-                    │    Dashboard    │
-                    └─────────────────┘
+* Top queries
+* Zero-result searches
+* Search trends
 
+### Index Health
 
-                    Airflow
-                       │
-             ┌─────────┴─────────┐
-             ↓                   ↓
-       FAISS rebuild      Recommendations
+* FAISS vector count
+* Embedding statistics
+* Index status
+* Rebuild information
 
-Current position:
+### Embedding Visualization
 
-Step 0 ✅
-Step 1 ✅
-Step 2 ⏳ ← WE ARE HERE
-Step 3
-Step 4
-Step 5
-Step 6
-Step 7
+```text
+512D CLIP Embeddings
+        ↓
+       UMAP
+        ↓
+       2D
+        ↓
+Category Visualization
+```
 
-Next action: api/core/clip_encoder.py — nothing beyond that until we verify it.
+The dashboard is primarily an observability and exploration layer; the core search engine remains independent of Streamlit.
+
+---
+
+# Project Structure
+
+```text
+visualmind/
+│
+├── api/
+│   ├── core/
+│   │   ├── clip_encoder.py
+│   │   ├── faiss_index.py
+│   │   ├── fusion.py
+│   │   ├── kafka_producer.py
+│   │   └── tagger.py
+│   │
+│   ├── database/
+│   │   └── database.py
+│   │
+│   ├── routes/
+│   │   ├── analytics.py
+│   │   ├── products.py
+│   │   ├── recommendations.py
+│   │   └── search.py
+│   │
+│   └── main.py
+│
+├── dashboard/
+│   └── app.py
+│
+├── pipeline/
+│   ├── dags/
+│   │   └── visualmind_pipeline.py
+│   ├── index_builder.py
+│   └── recommendation_builder.py
+│
+├── data/
+│   ├── abo/
+│   ├── products.db
+│   ├── faiss_index.bin
+│   └── embeddings_metadata.pkl
+│
+├── docker/
+│   └── docker-compose.yml
+│
+├── tests/
+│
+├── requirements.txt
+├── .env
+└── README.md
+```
+
+---
+
+# Technology Stack
+
+| Layer            | Technologies                             |
+| ---------------- | ----------------------------------------- |
+| AI / Embeddings  | PyTorch, Hugging Face Transformers, CLIP |
+| Vector Search    | FAISS                                     |
+| Backend          | FastAPI, Uvicorn                          |
+| Database         | SQLite, SQLAlchemy                        |
+| Data Processing  | Pandas, PyArrow, Pillow                   |
+| Workflow         | Apache Airflow                            |
+| Streaming        | Apache Kafka, Zookeeper                   |
+| Analytics        | Streamlit, Plotly, UMAP                   |
+| Infrastructure   | Docker, Docker Compose                    |
+| Testing          | Pytest, HTTPX                             |
+
+---
+
+# Engineering Focus
+
+VisualMind is intentionally built as more than a machine-learning demo.
+
+The project explores the engineering problems involved in turning a multimodal model into a reusable AI service:
+
+* Large-scale dataset ingestion
+* Persistent vector indexing
+* Model lifecycle management
+* Efficient similarity search
+* Multimodal embedding fusion
+* Offline recommendation generation
+* API/service separation
+* Workflow orchestration
+* Event-driven architecture
+* Search telemetry
+* Embedding visualization
+* Dependency and infrastructure management
+
+The result is a modular architecture where each component can evolve independently.
+
+For example:
+
+```text
+             ┌───────────────┐
+             │    Frontend   │
+             └───────┬───────┘
+                     │
+                     ▼
+             ┌───────────────┐
+             │  VisualMind   │
+             │      API      │
+             └───────┬───────┘
+                     │
+          ┌──────────┼──────────┐
+          ▼          ▼          ▼
+        Search   Recommend    Tags
+          │          │          │
+          └──────────┼──────────┘
+                     ▼
+              Product Database
+```
+
+The frontend, database, catalog system, or business application around VisualMind can therefore be replaced without changing the fundamental search architecture.
+
+---
+
+# Integration Possibilities
+
+VisualMind can serve as an AI layer for:
+
+* E-commerce platforms
+* Online marketplaces
+* Product catalogs
+* Retail applications
+* Mobile shopping applications
+* ERP systems with product catalogs
+* Fashion platforms
+* Furniture marketplaces
+* Electronics catalogs
+* Internal enterprise search systems
+* SaaS products requiring semantic product discovery
+
+A consuming application only needs to communicate with the API.
+
+For example:
+
+```text
+Mobile App
+    │
+    │ POST /search/image
+    ▼
+VisualMind API
+    │
+    ▼
+AI Search
+    │
+    ▼
+JSON Results
+```
+
+This makes the system suitable for integration with existing applications rather than requiring the entire application to be rebuilt around VisualMind.
+
+---
+
+# Current Capabilities
+
+```text
+┌─────────────────────────────────────────────┐
+│              VisualMind                     │
+├─────────────────────────────────────────────┤
+│                                             │
+│  ✓ Image Search                             │
+│  ✓ Text Search                              │
+│  ✓ Multimodal Search                        │
+│  ✓ CLIP Embeddings                          │
+│  ✓ FAISS Vector Search                      │
+│  ✓ Zero-Shot Product Tagging                │
+│  ✓ Product Recommendations                  │
+│  ✓ FastAPI REST API                         │
+│  ✓ SQLite Persistence                       │
+│  ✓ Airflow Pipeline                         │
+│  ✓ Kafka Search Events                      │
+│  ✓ Streamlit Analytics                      │
+│  ✓ UMAP Embedding Visualization             │
+│  ✓ Dockerized Kafka Infrastructure          │
+│  ✓ API / AI Layer Separation                │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+# Status
+
+**Completed — v1**
+
+All planned components from the initial project architecture have been implemented and validated.
+
+```text
+Step 0  Environment & Infrastructure       ✓
+Step 1  Dataset Engineering                ✓
+Step 2  CLIP + FAISS                       ✓
+Step 3  FastAPI Search                     ✓
+Step 4  Multimodal Fusion                  ✓
+Step 5  Auto-Tagging                       ✓
+Step 6  Recommendations + Airflow          ✓
+Step 7  Kafka + Streamlit Analytics        ✓
+```
+
+---
+
+# License
+
+Add your preferred license here.

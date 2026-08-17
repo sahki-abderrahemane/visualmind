@@ -26,15 +26,37 @@ if str(PROJECT_ROOT) not in sys.path:
 
 def rebuild_faiss_index() -> None:
     """
-    Rebuild the FAISS index using the current product dataset.
+    Rebuild and persist the FAISS index using the current product dataset.
     """
 
     # Import inside the task so Airflow's DAG parser does not initialize
-    # FAISS or other heavyweight pipeline dependencies during DAG parsing.
-    from pipeline.index_builder import build_index
+    # FAISS, CLIP, or other heavyweight dependencies during DAG parsing.
+    from api.core.clip_encoder import CLIPEncoder
+    from api.database.database import SessionLocal
+    from pipeline.index_builder import build_index, save_index
 
-    # Execute the existing index-building pipeline.
-    build_index()
+    # Create the CLIP encoder once for the complete indexing operation.
+    encoder = CLIPEncoder()
+
+    # Open the database session used to retrieve product records.
+    db = SessionLocal()
+
+    try:
+        # Build the FAISS index from the current product dataset.
+        index, product_ids = build_index(
+            db=db,
+            encoder=encoder,
+        )
+
+        # Persist both the FAISS index and its product-ID mapping.
+        save_index(
+            index=index,
+            product_ids=product_ids,
+        )
+
+    finally:
+        # Always close the database session after the task finishes.
+        db.close()
 
 
 def rebuild_recommendations() -> None:

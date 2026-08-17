@@ -4,11 +4,16 @@ VisualMind search endpoints.
 This module contains image, text, and multimodal product-search
 endpoints. All endpoints reuse the CLIP encoder and FAISS index
 loaded once during FastAPI startup.
+
+Every search is recorded in SQLite and published to Kafka for
+downstream analytics.
 """
 
 from __future__ import annotations
 
 import io
+import time
+from datetime import datetime, timezone
 
 import numpy as np
 from fastapi import (
@@ -28,7 +33,9 @@ from api.core.fusion import (
     TEXT_ALPHA,
     fuse_embeddings,
 )
+from api.core.kafka_producer import kafka_producer
 from api.database.database import (
+    SearchEvent,
     get_db,
     get_products_by_ids,
 )
@@ -158,6 +165,76 @@ def decode_uploaded_image(
         ) from exc
 
 
+def record_search_event(
+    *,
+    db: Session,
+    query_type: str,
+    query_text: str | None,
+    results: list[dict],
+    response_time_ms: float,
+) -> None:
+    """
+    Record a search event in SQLite and publish it to Kafka.
+
+    Analytics failures never cause the actual search request to fail.
+    """
+
+    # The first result is the highest-ranked FAISS result.
+    top_result_id = (
+        results[0]["product_id"]
+        if results
+        else None
+    )
+
+    result_count = len(results)
+
+    # Use UTC for consistent analytics timestamps.
+    timestamp = datetime.now(timezone.utc).replace(
+        tzinfo=None
+    )
+
+    # ----------------------------------------------------------
+    # SQLite
+    # ----------------------------------------------------------
+
+    database_event = SearchEvent(
+        query_type=query_type,
+        query_text=query_text,
+        result_count=result_count,
+        top_result_id=top_result_id,
+        response_time_ms=response_time_ms,
+        timestamp=timestamp,
+    )
+
+    try:
+        # Persist the search event locally.
+        db.add(database_event)
+        db.commit()
+
+    except Exception as exc:
+        # Roll back so the SQLAlchemy session remains usable.
+        db.rollback()
+
+        # Analytics must never break a successful search.
+        print(
+            "SQLite search event could not be recorded: "
+            f"{exc}"
+        )
+
+    # ----------------------------------------------------------
+    # Kafka
+    # ----------------------------------------------------------
+
+    # Publish the same event to Kafka for NexusFlow/analytics.
+    kafka_producer.publish_search_event(
+        query_type=query_type,
+        query_text=query_text,
+        result_count=result_count,
+        top_result_id=top_result_id,
+        response_time_ms=response_time_ms,
+    )
+
+
 @router.post("/image")
 async def search_by_image(
     request: Request,
@@ -167,6 +244,9 @@ async def search_by_image(
     """
     Search products using an uploaded product image.
     """
+
+    # Start measuring the complete search operation.
+    start_time = time.perf_counter()
 
     # Validate the MIME type before processing the upload.
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -194,6 +274,20 @@ async def search_by_image(
         query_vector=query_vector,
     )
 
+    # Calculate total search time.
+    response_time_ms = (
+        time.perf_counter() - start_time
+    ) * 1000
+
+    # Record the search in SQLite and Kafka.
+    record_search_event(
+        db=db,
+        query_type="image",
+        query_text=None,
+        results=results,
+        response_time_ms=response_time_ms,
+    )
+
     return {
         "query_type": "image",
         "result_count": len(results),
@@ -210,6 +304,9 @@ async def search_by_text(
     """
     Search products using a natural-language text query.
     """
+
+    # Start measuring the complete search operation.
+    start_time = time.perf_counter()
 
     # Remove accidental whitespace around the user's query.
     query = query.strip()
@@ -234,6 +331,20 @@ async def search_by_text(
         query_vector=query_vector,
     )
 
+    # Calculate total search time.
+    response_time_ms = (
+        time.perf_counter() - start_time
+    ) * 1000
+
+    # Record the search in SQLite and Kafka.
+    record_search_event(
+        db=db,
+        query_type="text",
+        query_text=query,
+        results=results,
+        response_time_ms=response_time_ms,
+    )
+
     return {
         "query_type": "text",
         "query": query,
@@ -252,6 +363,9 @@ async def search_multimodal(
     """
     Search products using both an image and a text refinement.
     """
+
+    # Start measuring the complete search operation.
+    start_time = time.perf_counter()
 
     # Validate the uploaded file before reading it.
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -279,7 +393,7 @@ async def search_multimodal(
     # Reuse the single CLIP model loaded during FastAPI startup.
     encoder = request.app.state.clip_encoder
 
-    # Encode the image and text independently before fusion.
+    # Encode the image and text independently.
     image_embedding = encoder.encode_image(image)
     text_embedding = encoder.encode_text(query)
 
@@ -295,6 +409,20 @@ async def search_multimodal(
         request=request,
         db=db,
         query_vector=fused_embedding,
+    )
+
+    # Calculate total search time.
+    response_time_ms = (
+        time.perf_counter() - start_time
+    ) * 1000
+
+    # Record the search in SQLite and Kafka.
+    record_search_event(
+        db=db,
+        query_type="multimodal",
+        query_text=query,
+        results=results,
+        response_time_ms=response_time_ms,
     )
 
     return {
