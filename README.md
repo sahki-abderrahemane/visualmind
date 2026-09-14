@@ -691,7 +691,3 @@ Step 7  Kafka + Streamlit Analytics        ✓
 ```
 
 ---
-
-# License
-
-Add your preferred license here.
